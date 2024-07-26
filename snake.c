@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <termios.h>
+
+struct termios original_termios;
 
 typedef struct {
 	int x;
@@ -20,6 +23,10 @@ unsigned int moveNum = 0;
 
 unsigned int score = 0;
 
+void reset_terminal_mode() {
+    tcsetattr(0, TCSANOW, &original_termios);
+}
+
 void init() {
 	snake = malloc(len * sizeof(Pos*));
 	for (unsigned int i = 0; i < len; i++) {
@@ -29,6 +36,22 @@ void init() {
 	}
 	snake[head]->x = 10;
 	snake[head]->y = 10;
+
+	// Set terminal mode
+	struct termios new_termios;
+
+    // Get the terminal settings for stdin
+    tcgetattr(0, &original_termios);
+    // Copy the settings
+    new_termios = original_termios;
+
+    // Disable canonical mode and echo
+    new_termios.c_lflag &= ~(ICANON | ECHO);
+    // Set the new terminal attributes
+    tcsetattr(0, TCSANOW, &new_termios);
+
+    // Ensure the terminal is reset when the program exits
+    atexit(reset_terminal_mode);
 }
 
 void cleanup() {
@@ -49,6 +72,7 @@ int isSnake(int x, int y) {
 }
 
 void draw() {
+	printf("\e[1;1H\e[2J");
 	for (int i = 0; i < height; i++) {
 		for (int j = 0; j < width; j++) {
 			if (isSnake(j, i)) {
@@ -116,14 +140,17 @@ int logic() {
 }
 
 int main() {
+	system("tput smcup");
 	init();
 	while (logic()) {
 		draw();
 		move();
 	}
 
-	printf("Game Over!\n");
+	printf("Game Over!\nPress any key to exit...\n");
+	fgetc(stdin);
 	cleanup();
 
+	system("tput rmcup");
 	return 1;
 }
