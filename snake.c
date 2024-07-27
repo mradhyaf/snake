@@ -13,14 +13,78 @@ int height = 20;
 int width = 20;
 
 Pos **snake;
-unsigned int len = 3;
-unsigned int head = 0;
+unsigned int cap = 2;
+unsigned int len = 1;
+unsigned int head = 1;
+unsigned int tail = 0;
 Pos apple = { -1, -1 };
 
 char cmd = 'l';
-unsigned int moveNum = 0;
 
 unsigned int score = 0;
+
+Pos** alloc_snake(unsigned int cap) {
+	Pos** new_snake = malloc(cap * sizeof(Pos*));
+	for (unsigned int i = 0; i < cap; i++) {
+		new_snake[i] = malloc(sizeof(Pos));
+		new_snake[i]->x = -1;
+		new_snake[i]->y = -1;
+	}
+	return new_snake;
+}
+
+void free_snake() {
+	for (unsigned int i = 0; i < cap; i++) {
+		free(snake[i]);
+		snake[i] = NULL;
+	}
+	free(snake);
+	snake = NULL;
+}
+
+void grow_snake() {
+	len++;
+	if (len == cap) {
+		Pos **new_snake = alloc_snake(2*cap);
+		for (unsigned int i = 0; i < len; i++) {
+			*new_snake[i] = *snake[(tail + i) % len];
+		}
+		free_snake();
+		snake = new_snake;
+		tail = 0;
+		head = len - 1;
+		cap *= 2;
+	}
+}
+
+void move_snake() {
+	Pos headv = *snake[head];
+	if ((head - tail + cap) % cap == len) {
+		snake[tail]->x = snake[tail]->y = -1;
+		tail = (tail + 1) % cap;
+	}
+	head = (head + 1) % cap;
+	switch (cmd) {
+	case 'h':
+		headv.x--;
+		break;
+	case 'j':
+		headv.y++;
+		break;
+	case 'k':
+		headv.y--;
+		break;
+	case 'l':
+		headv.x++;
+		break;
+	}
+	*snake[head] = headv;
+}
+
+void gen_apple() {
+	apple.x = rand() % (width-2) + 1;
+	apple.y = rand() % (height-2) + 1;
+}
 
 void set_nblocking_io() {
 	int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
@@ -53,27 +117,19 @@ void reset_terminal_mode() {
 }
 
 void init() {
-	snake = malloc(len * sizeof(Pos*));
-	for (unsigned int i = 0; i < len; i++) {
-		snake[i] = malloc(sizeof(Pos));
-		snake[i]->x = -1;
-		snake[i]->y = -1;
-	}
+	snake = alloc_snake(cap);
 	snake[head]->x = 10;
 	snake[head]->y = 10;
 }
 
 void cleanup() {
-	for (unsigned int i = 0; i < len; i++) {
-		free(snake[i]);
-	}
-	free(snake);
+	free_snake();
 }
 
 int is_snake(int x, int y) {
 	for (int i = 0; i < len; i++) {
-		Pos s = *snake[i];
-		if (s.x == x && s.y == y) {
+		Pos *s = snake[(tail + i) % cap];
+		if (s->x == x && s->y == y) {
 			return 1;
 		}
 	}
@@ -99,52 +155,31 @@ void draw() {
 	printf("Score: %d\n", score);
 }
 
-void move() {
+void input() {
 	char in;
 	while ((in = getchar()) != EOF) {
 		if (in == 'h' || in == 'j' || in == 'k' || in == 'l') {
 			cmd = in;
 		}
 	}
-	unsigned int prev = head;
-	head = (head + 1) % len;
-	*snake[head] = *snake[prev];
-	switch (cmd) {
-	case 'h':
-		snake[head]->x--;
-		break;
-	case 'j':
-		snake[head]->y++;
-		break;
-	case 'k':
-		snake[head]->y--;
-		break;
-	case 'l':
-		snake[head]->x++;
-		break;
-	}
-}
-
-void genApple() {
-	apple.x = rand() % (width-2) + 1;
-	apple.y = rand() % (height-2) + 1;
 }
 
 int logic() {
-	if (snake[head]->x == 0 || snake[head]->x == width || snake[head]->y == 0 || snake[head]->y == height) {
+	move_snake();
+
+	if (snake[head]->x == 0 || snake[head]->x == width - 1|| snake[head]->y == 0 || snake[head]->y == height - 1) {
 		return 0;
 	}
 	
 	if (snake[head]->x == apple.x && snake[head]->y == apple.y) {
 		apple.x = apple.y = -1;
 		score++;
+		grow_snake();
 	}
 
-	while (apple.x == -1 || (apple.x == snake[head]->x && apple.y == snake[head]->y)) {
-		genApple();
+	while (apple.x == -1) {
+		gen_apple();
 	}
-
-	moveNum++;
 	
 	return 1;
 }
@@ -155,8 +190,8 @@ int main() {
 	init();
 	while (logic()) {
 		draw();
-		usleep(200000);
-		move();
+		usleep(400 * 1000);
+		input();
 	}
 	printf("Game Over!\nPress any key to exit...\n");
 	set_blocking_io();
