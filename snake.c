@@ -1,9 +1,8 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <termios.h>
-
-struct termios original_termios;
+#include <unistd.h>
 
 typedef struct {
 	int x;
@@ -23,8 +22,34 @@ unsigned int moveNum = 0;
 
 unsigned int score = 0;
 
+void set_nblocking_io() {
+	int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+}
+
+void set_blocking_io() {
+	int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+}
+
+void set_terminal_mode() {
+	// Save terminal
+	system("tput smcup");
+	// Set non-canonical
+	struct termios newt;
+    tcgetattr(STDIN_FILENO, &newt);
+    newt.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+}
+
 void reset_terminal_mode() {
-    tcsetattr(0, TCSANOW, &original_termios);
+	// Reset canonical
+	struct termios oldt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    oldt.c_lflag |= (ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	// Restore terminal
+	system("tput rmcup");
 }
 
 void init() {
@@ -36,22 +61,6 @@ void init() {
 	}
 	snake[head]->x = 10;
 	snake[head]->y = 10;
-
-	// Set terminal mode
-	struct termios new_termios;
-
-    // Get the terminal settings for stdin
-    tcgetattr(0, &original_termios);
-    // Copy the settings
-    new_termios = original_termios;
-
-    // Disable canonical mode and echo
-    new_termios.c_lflag &= ~(ICANON | ECHO);
-    // Set the new terminal attributes
-    tcsetattr(0, TCSANOW, &new_termios);
-
-    // Ensure the terminal is reset when the program exits
-    atexit(reset_terminal_mode);
 }
 
 void cleanup() {
@@ -61,7 +70,7 @@ void cleanup() {
 	free(snake);
 }
 
-int isSnake(int x, int y) {
+int is_snake(int x, int y) {
 	for (int i = 0; i < len; i++) {
 		Pos s = *snake[i];
 		if (s.x == x && s.y == y) {
@@ -75,26 +84,27 @@ void draw() {
 	printf("\e[1;1H\e[2J");
 	for (int i = 0; i < height; i++) {
 		for (int j = 0; j < width; j++) {
-			if (isSnake(j, i)) {
-				fputc('O', stdout);
+			if (is_snake(j, i)) {
+				putchar('O');
 			} else if (j == apple.x && i == apple.y) {
-				fputc('@', stdout);
+				putchar('@');
 			} else if (i == 0 || i == height-1 || j == 0 || j == width-1) {
-				fputc('#', stdout);
+				putchar('#');
 			} else {
-				fputc(' ', stdout);
+				putchar(' ');
 			}
 		}
-		fputc('\n', stdout);
+		putchar('\n');
 	}
 	printf("Score: %d\n", score);
-	printf("Move#: %d\n", moveNum);
 }
 
 void move() {
-	char in = fgetc(stdin);
-	if (in == 'h' || in == 'j' || in == 'k' || in == 'l') {
-		cmd = in;
+	char in;
+	while ((in = getchar()) != EOF) {
+		if (in == 'h' || in == 'j' || in == 'k' || in == 'l') {
+			cmd = in;
+		}
 	}
 	unsigned int prev = head;
 	head = (head + 1) % len;
@@ -140,17 +150,18 @@ int logic() {
 }
 
 int main() {
-	system("tput smcup");
+	set_terminal_mode();
+	set_nblocking_io();
 	init();
 	while (logic()) {
 		draw();
+		usleep(200000);
 		move();
 	}
-
 	printf("Game Over!\nPress any key to exit...\n");
+	set_blocking_io();
 	fgetc(stdin);
 	cleanup();
-
-	system("tput rmcup");
+	reset_terminal_mode();
 	return 1;
 }
